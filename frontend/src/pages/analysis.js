@@ -23,18 +23,24 @@ function results(result) {
 }
 
 export async function analysis(root, refresh, current) {
-  const [result, cells] = await Promise.all([api(planPath('/conclusion')), api(planPath('/coverage'))]);
+  const [result, cells, batches] = await Promise.all([
+    api(planPath('/conclusion')), api(planPath('/coverage')), api(planPath('/backfill')),
+  ]);
   if (!current()) return;
   const queue = cells.totals.queue || 0;
+  const staging = batches.staging.length;
   const cellsReady = cells.cells.every(row => row.baseline >= cells.minimum && row.trial >= cells.minimum);
-  const problem = queue ? `还有 ${queue} 份问卷待清洗。` : cellsReady ? '四格样本均已达到最低要求。' : '至少有一格样本不足，需继续调查。';
+  const problem = staging ? `还有 ${staging} 个离线补传批次未合并，合并前暂停封存。`
+    : queue ? `还有 ${queue} 份问卷待清洗。` : cellsReady ? '四格样本均已达到最低要求。' : '至少有一格样本不足，需继续调查。';
   root.innerHTML = heading('分层比较', '改线前后满意度复测', '按高峰和平峰匹配调查口径，对比两波独立乘客的 1–5 分分布。') + `
     <div class="split analysis-grid"><div>
       ${result?.band_results ? results(result) : `<section class="panel"><div class="panel-head"><h2>封存前检查</h2></div>
       ${coverageTable(cells)}<div class="panel-foot"><p>${esc(problem)}</p>
       ${!result && state.plan.stage === 'surveying' && state.user.role === 'analyst' ?
-        `<button id="seal" class="primary" ${queue || !cellsReady ? 'disabled' : ''}>封存并发起比较</button>` : ''}</div>
+        `<button id="seal" class="primary" ${queue || staging || !cellsReady ? 'disabled' : ''}>封存并发起比较</button>` : ''}</div>
       ${result?.status === 'queued' ? '<div class="pending" role="status">问卷已封存，正在等待分析 worker 计算。</div>' : ''}
+      ${!result && staging ? `<div class="pending" role="status">${batches.staging.map(batch =>
+        `${esc(batch.batch_ref)}（已收 ${batch.received_items} 份）`).join('、')} 待合并。<a href="#/survey/${state.plan.id}">回到乘客调查继续补传</a>。单份录入不受影响。</div>` : ''}
       </section>`}</div>
       <aside class="side-stack"><section class="panel guide"><div class="panel-head"><h2>读数口径</h2></div>
       <div class="guide-body"><dl><dt>为什么分层</dt><dd>分别比较高峰与平峰，降低两轮时段构成不同带来的偏差。</dd>

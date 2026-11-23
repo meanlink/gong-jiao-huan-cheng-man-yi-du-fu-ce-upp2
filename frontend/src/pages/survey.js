@@ -1,6 +1,7 @@
 import {api, planPath} from '../api.js';
 import {bindForm, coverageTable, empty, esc, heading, notify} from '../components.js';
 import {bands, cohorts, dispositions, state} from '../state.js';
+import {backfillSection, bindBackfill, clock} from './backfill.js';
 
 const options = (labels, first) => `<option value="">${first}</option>` +
   Object.entries(labels).map(([key, name]) => `<option value="${key}">${name}</option>`).join('');
@@ -26,12 +27,19 @@ function reason(sample) {
   return flags.join(' / ');
 }
 
+function provenance(sample) {
+  if (sample.source === 'backfill') return `离线补传 ${esc(sample.offline_ref)} · 填写 ${esc(clock(sample.filled_at))}`;
+  return `线上登记 ${esc(clock(sample.collected_at))}`;
+}
+
 function sampleTable(items) {
   return `<div class="table-scroll"><table><thead><tr><th>样本号 / 乘车日</th><th>波次</th><th>时段</th><th>评分</th><th>处置</th></tr></thead>
-    <tbody>${items.map(sample => `<tr><td><strong class="mono">${esc(sample.sample_ref)}</strong><small class="subline">${esc(sample.trip_day)}</small></td>
+    <tbody>${items.map(sample => `<tr><td><strong class="mono">${esc(sample.sample_ref)}</strong><small class="subline">${esc(sample.trip_day)}</small>
+    <small class="subline">${provenance(sample)}</small></td>
     <td>${cohorts[sample.cohort]}</td><td>${bands[sample.time_band] || '未填写'}</td>
     <td><span class="mono">${sample.rating}</span></td><td>${sample.disposition === 'queue' ? `<span class="warning-text">${reason(sample)}</span>` :
-    `<span>${dispositions[sample.disposition]}</span>`}${sample.cleanup_note ? `<small class="subline">${esc(sample.cleanup_note)}</small>` : ''}</td></tr>`).join('')}
+    `<span>${dispositions[sample.disposition]}</span>`}${sample.cleanup_note ? `<small class="subline">${esc(sample.cleanup_note)}</small>` : ''}
+    ${sample.merge_note && sample.merge_note !== sample.cleanup_note ? `<small class="subline">${esc(sample.merge_note)}</small>` : ''}</td></tr>`).join('')}
     </tbody></table></div>`;
 }
 
@@ -49,21 +57,25 @@ function queueCards(items, canClean) {
 
 export async function survey(root, refresh, current) {
   const query = state.query === 'all' ? '' : `&state=${state.query}`;
-  const [data, coverage] = await Promise.all([
+  const [data, coverage, batches] = await Promise.all([
     api(planPath(`/samples?offset=${state.offset}${query}`)), api(planPath('/coverage')),
+    api(planPath('/backfill')),
   ]);
   if (!current()) return;
   const open = state.plan.stage === 'surveying';
   const pending = coverage.totals.queue || 0;
   const tabs = [['queue', `清洗队列（${pending}）`], ['all', '全部问卷']];
-  root.innerHTML = heading('乘客调查', '换乘问卷与清洗队列', '一条乘客码在同一版本中只计一次。', '') + `
-    <div class="split survey-grid"><section class="panel"><div class="panel-head"><h2>问卷记录</h2>
+  root.innerHTML = heading('乘客调查', '换乘问卷与清洗队列', '一条乘客码在本版本只计实际填写最早的一份；补传首份会替下已计入的旧问卷，两份均留档。', '') + `
+    <div class="split survey-grid"><div>
+    <section class="panel"><div class="panel-head"><h2>问卷记录</h2>
       <div class="tabs" aria-label="问卷筛选">${tabs.map(([key, title]) => `<button data-query="${key}" aria-pressed="${state.query === key}">${title}</button>`).join('')}</div></div>
       ${data.items.length ? (state.query === 'queue' ? queueCards(data.items, open && state.user.role === 'analyst') : sampleTable(data.items)) :
         empty(state.query === 'queue' ? '清洗队列为空。可到分层比较页查看样本覆盖。' : '还没有问卷记录。请在调查开启后用调查员账号录入。')}
       ${data.has_more || state.offset ? `<div class="pagination"><button id="prev" class="quiet" ${state.offset ? '' : 'disabled'}>上一页</button>
         <span class="mono">第 ${state.offset / 20 + 1} 页</span><button id="next" class="quiet" ${data.has_more ? '' : 'disabled'}>下一页</button></div>` : ''}
-    </section><aside class="side-stack">
+    </section>
+    ${open || batches.batches.length ? backfillSection(batches, state.user.role, open) : ''}
+    </div><aside class="side-stack">
        ${state.user.role === 'collector' && open ? captureForm() : ''}
        <section class="panel"><div class="panel-head"><h2>有效样本</h2><strong class="mono">${coverage.totals.eligible || 0} 份</strong></div>
        ${coverageTable(coverage)}<div class="panel-foot"><p>同一波次、同一时段至少 ${coverage.minimum} 份有效问卷。</p></div></section>
@@ -75,6 +87,7 @@ export async function survey(root, refresh, current) {
   }));
   root.querySelector('#prev')?.addEventListener('click', () => { state.offset -= 20; refresh(); });
   root.querySelector('#next')?.addEventListener('click', () => { state.offset += 20; refresh(); });
+  if (open) bindBackfill(root, batches, refresh);
   bindForm(root, '#sample-form', async data => {
     data.rating = Number(data.rating);
     data.time_band ||= null;

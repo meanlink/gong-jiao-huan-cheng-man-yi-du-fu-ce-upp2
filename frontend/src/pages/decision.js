@@ -6,7 +6,9 @@ const auditLabels = {'plan.created':'建立路线版本', 'plan.revised':'修改
   'plan.seeded':'载入示例版本', 'survey.seeded':'载入示例问卷', 'sample.captured':'登记问卷',
   'sample.resolved':'处置清洗问卷', 'survey.sealed':'封存问卷快照', 'comparison.completed':'完成分层比较', 'decision.signed':'签署运营决策',
   'walk.recorded':'登记实走巡检', 'walk.cleared':'清除通行障碍', 'handover.opened':'建立改线交接单',
-  'handover.proof_added':'提交交接凭证', 'handover.released':'发布改线交接单'};
+  'handover.proof_added':'提交交接凭证', 'handover.released':'发布改线交接单',
+  'backfill.started':'开始离线补传', 'backfill.items_received':'接收离线问卷', 'backfill.merged':'合并离线补传批次',
+  'backfill.first_replaced':'补传首份替下旧问卷', 'backfill.cancelled':'取消离线补传批次'};
 
 function decisionForm(result) {
   return `<form id="sign-form" class="vertical-form"><fieldset><legend>签署结论</legend><div class="decision-options">

@@ -11,7 +11,7 @@ from redis import Redis, RedisError
 from starlette.concurrency import run_in_threadpool
 
 from scripts.seed_demo import seed
-from . import conclusions, handover, plans, support_routes, surveys, walk_checks
+from . import backfill, conclusions, handover, plans, support_routes, surveys, walk_checks
 from .auth import identity, issue_token, verify_password
 from .db import connect, migrate
 from .schemas import Credentials
@@ -36,6 +36,7 @@ async def lifespan(app):
 app = FastAPI(title='公交换乘满意度复测', lifespan=lifespan)
 app.include_router(plans.router)
 app.include_router(surveys.router)
+app.include_router(backfill.router)
 app.include_router(conclusions.router)
 app.include_router(walk_checks.router)
 app.include_router(handover.router)

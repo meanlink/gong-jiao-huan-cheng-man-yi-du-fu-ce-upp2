@@ -36,6 +36,10 @@ def seal_for_analysis(plan_id: int, user=Depends(allowed('analyst'))):
     with connect() as db:
         plan = get_plan(db, plan_id, lock=True)
         at_stage(plan, Stage.SURVEYING, '只有调查中的方案可以封存')
+        staging = db.execute("SELECT count(*) AS n FROM backfill_batch WHERE plan_id=%s AND status='staging'",
+                             (plan_id,)).fetchone()['n']
+        if staging:
+            raise HTTPException(409, f'还有 {staging} 个离线补传批次未合并，处理完才能封存；单份录入不受影响')
         queued = db.execute("SELECT count(*) AS n FROM survey_sample WHERE plan_id=%s AND disposition='queue'",
                             (plan_id,)).fetchone()['n']
         if queued:

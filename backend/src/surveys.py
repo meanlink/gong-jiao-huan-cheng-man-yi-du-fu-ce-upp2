@@ -9,7 +9,7 @@ from .schemas import CleanupInput, Cohort, SampleState, Stage, SurveyInput
 
 router = APIRouter(prefix='/plans/{plan_id}/samples', tags=['乘客调查'])
 SAMPLE_COLUMNS = '''id,sample_ref,plan_id,cohort,trip_day,time_band,rating,disposition,
-                    duplicate_of,cleanup_note,collected_at'''
+                    duplicate_of,cleanup_note,collected_at,source,filled_at,offline_ref,merge_note'''
 
 
 @router.get('')

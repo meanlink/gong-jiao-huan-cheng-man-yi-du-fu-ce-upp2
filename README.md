@@ -36,6 +36,15 @@
 
 从线路版本选择演示线路 `NM-26A`，再打开「乘客协助」。南门 5 号港湾至地铁 B 口已有三项交接凭证和首版现场指引。无障碍协助点一席已占，站务台两席占一席，调度岗已有一份错过换乘的协助单。可在主管账号暂停无障碍点并把站务台上限降至一席，由调查员登记一份无台阶通行需求，观察待派。恢复站务台容量后，由分析员重新分派并办结。
 
+## 离线补传与首份合并
+
+站点断网时，调查员在离线表单上照常填写，恢复网络后按批补传。补传只在「调查执行中」的版本可用，现场调查员和数据分析员都可发起。
+
+- **批次与续传**：以批次号和可选的应到份数建立批次。同一批次号再次提交返回原批次，继续接收；已结案批次不能复用批次号。上传按离线编号 `offline_ref` 逐条入账，同一编号重试时跳过并回报，断点续传不会重复新增已收问卷。空批次可取消，已收问卷的批次只能合并。
+- **合并与首份**：合并时把本批问卷写成样本，再按匿名乘客归一。同一匿名乘客以**实际填写最早**的一份为首份：补传问卷填写时间更早时，替下已计入的那份（线上问卷沿用登记时间比较；补传问卷用原始填写时间），两份都留在档。原首份转为剔除并记录「晚到首份」依据，后到的一份记重复留档剔除。合并幂等，重复合并不新增样本。合并会同步改写此前批次的问卷去向，使其依据仍指向最终首份。
+- **封存互斥**：仍有未合并批次时暂停封存，分析页会列出待合并批次并停用封存按钮；单份录入、清洗队列和巡检不受影响。批次全部结案后恢复正常封存，封存后拒绝补传。
+- **去向追溯**：乘客调查页的「离线补传批次」列出每个批次的应到/已收份数、每份问卷的填写时间、去向（首份计入 / 被替下留档 / 重复留档剔除）和依据；「全部问卷」在样本号下标注来源与填写时间。操作留痕记录批次开始、接收、合并、替下与取消。
+
 ## 启动
 
 ```bash
@@ -86,11 +95,13 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 - `backend/migrations/001_transfer_review.sql` 定义三个领域表、约束、审计和角色表。`backend/src/schemas.py` 定义入口模型。
 - `backend/migrations/002_route_delivery.sql`、`backend/src/walk_checks.py` 和 `handover.py` 负责实走巡检、复查约束、交接任务和发布留痕。
+- `backend/migrations/005_offline_backfill.sql` 定义补传批次与离线问卷收件表，并给样本增加 `source / filled_at / offline_ref / merge_note`。`backend/src/backfill.py` 负责批次续传、幂等接收和首份归一，`backfill_schemas.py` 定义离线问卷入口。
 - `backend/src/plans.py`、`surveys.py`、`conclusions.py` 各自承载领域 API。`analysis.py` 为计算实现，`worker.py` 领取和完成异步复测。
 - `backend/scripts/seed_demo.py` 以账号邮箱、线路版本号和首次创建版本作为幂等边界。seed 重跑不修改已签署决策或清洗后的样本。
 - `frontend/src/app.js` 装配路由，`state.js` 管理会话、当前版本与调查队列筛选，`api.js` 连接同源 API，`components.js` 提供公共表现及表单交互，`pages/` 负责六个业务页面。
 - 共享枚举包括 `Cohort`（改线前、后）、`TimeBand`（高峰、平峰）、`Stage`（线路状态）、`SampleState`（清洗处置）、`Decision`（签署选项）和三角色。取值分别落在 `backend/src/schemas.py`（角色定义还见 `auth.py`、`seed_demo.py` 与 API 权限），数据库迁移约束和 `frontend/src/state.js`。结论状态 `queued / ready / signed` 由迁移、`conclusions.py`、`worker.py` 和分析/决策页消费。
 - 巡检结果和交接任务枚举在新增迁移、`walk_checks.py` / `handover.py` 和前端对应页面定义。`CX-26B` 的首次演示 seed 包含两条正常通行记录。
+- 补传去向枚举 `first / superseded / duplicate` 由迁移 `005` 约束，`backfill.py` 写入，`frontend/src/pages/backfill.js` 展示，嵌在乘客调查页。
 - 乘客协助使用 `Desk` 和 `Category`（`backend/src/support_schemas.py`、`frontend/src/support-api.js`、迁移 `003` / `004`），派单原因与处理动作由 `support_dispatch.py` 记录，在 `support-api.js` 和 `pages/support-queue.js` 显示。启用状态由 `support_directory.py` 提供，由 `pages/support.js` 展示。
 - 乘客协助的验收脚本、日志和截图见 `../../test-artifacts/gb-1051/min35/`。
 
