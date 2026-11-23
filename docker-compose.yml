@@ -1,0 +1,75 @@
+name: bus-transfer-satisfaction
+services:
+  frontend:
+    container_name: ${COMPOSE_PROJECT_NAME:-bus-transfer-satisfaction}-frontend
+    build: ./frontend
+    ports: ["${FRONTEND_PORT:-18250}:80"]
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+  backend:
+    container_name: ${COMPOSE_PROJECT_NAME:-bus-transfer-satisfaction}-backend
+    build: ./backend
+    environment: &app-env
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-transfer}
+      PGDATABASE: ${POSTGRES_DB:-transfer}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-transfer-local-db}
+      JWT_SECRET: ${JWT_SECRET:-change-this-local-demo-jwt-key-1051}
+      PASSENGER_SECRET: ${PASSENGER_SECRET:-change-this-local-passenger-key-1051}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      REDIS_URL: redis://redis:6379/0
+    ports: ["${BACKEND_PORT:-19250}:8000"]
+    volumes: ["runtime:/runtime"]
+    depends_on: &app-dependencies
+      db: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+      interval: 3s
+      timeout: 2s
+      retries: 18
+  worker:
+    container_name: ${COMPOSE_PROJECT_NAME:-bus-transfer-satisfaction}-worker
+    build: ./backend
+    command: [python, -m, src.worker]
+    environment: *app-env
+    volumes: ["runtime:/runtime"]
+    depends_on: *app-dependencies
+    healthcheck:
+      test: [CMD, python, -c, "import time; from pathlib import Path; assert time.time()-Path('/runtime/analysis-worker').stat().st_mtime < 12"]
+      interval: 3s
+      timeout: 2s
+      retries: 18
+  db:
+    container_name: ${COMPOSE_PROJECT_NAME:-bus-transfer-satisfaction}-db
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-transfer}
+      POSTGRES_DB: ${POSTGRES_DB:-transfer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-transfer-local-db}
+    ports: ["${DB_PORT:-17750}:5432"]
+    volumes: ["postgres_data:/var/lib/postgresql/data"]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U "$${POSTGRES_USER}" -d "$${POSTGRES_DB}"']
+      interval: 3s
+      timeout: 2s
+      retries: 18
+  redis:
+    container_name: ${COMPOSE_PROJECT_NAME:-bus-transfer-satisfaction}-redis
+    image: redis:7-alpine
+    command: [redis-server, --appendonly, 'yes']
+    volumes: ["redis_data:/data"]
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 3s
+      timeout: 2s
+      retries: 15
+volumes:
+  postgres_data:
+  redis_data:
+  runtime:
